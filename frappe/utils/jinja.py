@@ -66,8 +66,7 @@ def validate_template(html):
 	try:
 		jenv.from_string(html)
 	except TemplateSyntaxError as e:
-		frappe.msgprint(f"Line {e.lineno}: {e.message}")
-		frappe.throw(frappe._("Syntax error in template"))
+		frappe.throw(f"Syntax error in template as line {e.lineno}: {e.message}")
 
 
 def render_template(template, context=None, is_path=None, safe_render=True):
@@ -78,29 +77,51 @@ def render_template(template, context=None, is_path=None, safe_render=True):
 	:param is_path: (optional) assert that the `template` parameter is a path
 	:param safe_render: (optional) prevent server side scripting via jinja templating
 	"""
-
-	from jinja2 import TemplateError
-
-	from frappe import _, get_traceback, throw
-
 	if not template:
 		return ""
+
+	from jinja2 import TemplateError
+	from jinja2.sandbox import SandboxedEnvironment
+
+	from frappe import _, get_traceback, throw
 
 	if context is None:
 		context = {}
 
+	jenv: SandboxedEnvironment = get_jenv()
 	if is_path or guess_is_path(template):
-		return get_jenv().get_template(template).render(context)
+		is_path = True
+		compiled_template = jenv.get_template(template)
 	else:
 		if safe_render and ".__" in template:
 			throw(_("Illegal template"))
 		try:
-			return get_jenv().from_string(template).render(context)
+			compiled_template = jenv.from_string(template)
 		except TemplateError:
+			import html
+
 			throw(
 				title="Jinja Template Error",
-				msg=f"<pre>{template}</pre><pre>{get_traceback()}</pre>",
+				msg=f"<pre>{template}</pre><pre>{html.escape(get_traceback())}</pre>",
 			)
+
+	import time
+
+	from frappe.utils.logger import get_logger
+
+	logger = get_logger("render-template")
+	try:
+		start_time = time.monotonic()
+		return compiled_template.render(context)
+	except Exception as e:
+		import html
+
+		throw(title="Context Error", msg=f"<pre>{html.escape(get_traceback())}</pre>", exc=e)
+	finally:
+		if is_path:
+			logger.debug(f"Rendering time: {time.monotonic() - start_time:.6f} seconds ({template})")
+		else:
+			logger.debug(f"Rendering time: {time.monotonic() - start_time:.6f} seconds")
 
 
 def guess_is_path(template):
@@ -123,7 +144,9 @@ def get_jloader():
 		apps = frappe.get_hooks("template_apps")
 		if not apps:
 			apps = list(
-				reversed(frappe.local.flags.web_pages_apps or frappe.get_installed_apps(_ensure_on_bench=True))
+				reversed(
+					frappe.local.flags.web_pages_apps or frappe.get_installed_apps(_ensure_on_bench=True)
+				)
 			)
 
 		if "frappe" not in apps:
@@ -155,7 +178,7 @@ def set_filters(jenv):
 
 
 def get_jinja_hooks():
-	"""Returns a tuple of (methods, filters) each containing a dict of method name and method definition pair."""
+	"""Return a tuple of (methods, filters) each containing a dict of method name and method definition pair."""
 	import frappe
 
 	if not getattr(frappe.local, "site", None):

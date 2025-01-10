@@ -19,7 +19,7 @@ def update_event(args, field_map):
 
 
 def get_event_conditions(doctype, filters=None):
-	"""Returns SQL conditions with user permissions and filters for event queries"""
+	"""Return SQL conditions with user permissions and filters for event queries."""
 	from frappe.desk.reportview import get_filters_cond
 
 	if not frappe.has_permission(doctype):
@@ -46,8 +46,8 @@ def get_events(doctype, start, end, field_map, filters=None, fields=None):
 	if field_map.color:
 		fields.append(field_map.color)
 
-	start_date = "ifnull(%s, '0001-01-01 00:00:00')" % field_map.start
-	end_date = "ifnull(%s, '2199-12-31 00:00:00')" % field_map.end
+	start_date = "ifnull({}, '0001-01-01 00:00:00')".format(field_map.start)
+	end_date = "ifnull({}, '2199-12-31 00:00:00')".format(field_map.end)
 
 	filters += [
 		[doctype, start_date, "<=", end],

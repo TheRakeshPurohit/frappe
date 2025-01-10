@@ -1,14 +1,14 @@
 import types
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 from frappe.utils.safe_exec import ServerScriptNotEnabled, get_safe_globals, safe_exec
 
 
-class TestSafeExec(FrappeTestCase):
+class TestSafeExec(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls) -> None:
-		cls.enable_safe_exec()
+		cls.enterClassContext(cls.enable_safe_exec())
 		return super().setUpClass()
 
 	def test_import_fails(self):
@@ -23,7 +23,6 @@ class TestSafeExec(FrappeTestCase):
 		self.assertEqual(_locals["out"], 1)
 
 	def test_safe_eval(self):
-
 		TEST_CASES = {
 			"1+1": 2,
 			'"abc" in "abl"': False,
@@ -73,9 +72,7 @@ class TestSafeExec(FrappeTestCase):
 		self.assertEqual(frappe.db.sql("SELECT Max(name) FROM tabUser"), _locals["out"])
 
 	def test_safe_query_builder(self):
-		self.assertRaises(
-			frappe.PermissionError, safe_exec, """frappe.qb.from_("User").delete().run()"""
-		)
+		self.assertRaises(frappe.PermissionError, safe_exec, """frappe.qb.from_("User").delete().run()""")
 
 	def test_call(self):
 		# call non whitelisted method
@@ -96,7 +93,7 @@ class TestSafeExec(FrappeTestCase):
 	def test_ensure_getattrable_globals(self):
 		def check_safe(objects):
 			for obj in objects:
-				if isinstance(obj, (types.ModuleType, types.CodeType, types.TracebackType, types.FrameType)):
+				if isinstance(obj, types.ModuleType | types.CodeType | types.TracebackType | types.FrameType):
 					self.fail(f"{obj} wont work in safe exec.")
 				elif isinstance(obj, dict):
 					check_safe(obj.values())
@@ -127,6 +124,6 @@ class TestSafeExec(FrappeTestCase):
 		self.assertEqual(frappe.local.debug_log[-1], test_str)
 
 
-class TestNoSafeExec(FrappeTestCase):
+class TestNoSafeExec(IntegrationTestCase):
 	def test_safe_exec_disabled_by_default(self):
 		self.assertRaises(ServerScriptNotEnabled, safe_exec, "pass")

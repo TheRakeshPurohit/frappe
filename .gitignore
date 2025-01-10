@@ -2,7 +2,6 @@
 *.py~
 *.comp.js
 *.DS_Store
-locale
 .wnf-lang-status
 *.swp
 *.egg-info
@@ -169,6 +168,7 @@ typings/
 
 # Optional npm cache directory
 .npm
+.yarn
 
 # Optional eslint cache
 .eslintcache
@@ -194,3 +194,12 @@ cypress/videos
 
 # JetBrains IDEs
 .idea/
+# Helix Editor
+.helix/
+# Aider AI Chat
+.aider*
+
+# frappecloud billing
+billing/node_modules
+frappe/public/billing
+frappe/www/billing.html

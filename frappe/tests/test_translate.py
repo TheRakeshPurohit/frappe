@@ -7,17 +7,19 @@ from unittest.mock import patch
 
 import frappe
 import frappe.translate
-from frappe import _
-from frappe.tests.utils import FrappeTestCase
+from frappe import _, _lt
+from frappe.gettext.extractors.javascript import extract_javascript
+from frappe.tests import IntegrationTestCase
 from frappe.translate import (
+	MERGED_TRANSLATION_KEY,
+	USER_TRANSLATION_KEY,
 	clear_cache,
-	extract_javascript,
 	extract_messages_from_javascript_code,
 	extract_messages_from_python_code,
 	get_language,
+	get_messages_for_app,
 	get_parent_language,
 	get_translation_dict_from_file,
-	write_translations_file,
 )
 from frappe.utils import get_bench_path, set_request
 
@@ -25,16 +27,19 @@ dirname = os.path.dirname(__file__)
 translation_string_file = os.path.abspath(os.path.join(dirname, "translation_test_file.txt"))
 first_lang, second_lang, third_lang, fourth_lang, fifth_lang = choices(
 	# skip "en*" since it is a default language
-	frappe.get_all("Language", pluck="name", filters=[["name", "not like", "en%"]]),
+	frappe.get_all("Language", pluck="name", filters=[["name", "not like", "en%"], ["enabled", "=", 1]]),
 	k=5,
 )
 
 
-class TestTranslate(FrappeTestCase):
-	guest_sessions_required = [
+_lazy_translations = _lt("Communication")
+
+
+class TestTranslate(IntegrationTestCase):
+	guest_sessions_required = (
 		"test_guest_request_language_resolution_with_cookie",
 		"test_guest_request_language_resolution_with_request_header",
-	]
+	)
 
 	def setUp(self):
 		if self._testMethodName in self.guest_sessions_required:
@@ -44,6 +49,18 @@ class TestTranslate(FrappeTestCase):
 		frappe.form_dict.pop("_lang", None)
 		if self._testMethodName in self.guest_sessions_required:
 			frappe.set_user("Administrator")
+		frappe.local.lang = "en"
+
+	def test_clear_cache(self):
+		_("Trigger caching")
+
+		self.assertIsNotNone(frappe.cache.hget(USER_TRANSLATION_KEY, frappe.local.lang))
+		self.assertIsNotNone(frappe.cache.hget(MERGED_TRANSLATION_KEY, frappe.local.lang))
+
+		clear_cache()
+
+		self.assertIsNone(frappe.cache.hget(USER_TRANSLATION_KEY, frappe.local.lang))
+		self.assertIsNone(frappe.cache.hget(MERGED_TRANSLATION_KEY, frappe.local.lang))
 
 	def test_extract_message_from_file(self):
 		data = frappe.translate.get_messages_from_file(translation_string_file)
@@ -57,7 +74,7 @@ class TestTranslate(FrappeTestCase):
 			msg=f"Mismatched output:\nExpected: {expected_output}\nFound: {data}",
 		)
 
-		for extracted, expected in zip(data, expected_output):
+		for extracted, expected in zip(data, expected_output, strict=False):
 			ext_filename, ext_message, ext_context, ext_line = extracted
 			exp_message, exp_context, exp_line = expected
 			self.assertEqual(ext_filename, exp_filename)
@@ -66,7 +83,6 @@ class TestTranslate(FrappeTestCase):
 			self.assertEqual(ext_line, exp_line)
 
 	def test_read_language_variant(self):
-		frappe.local.lang = "en"
 		self.assertEqual(_("Mobile No"), "Mobile No")
 		try:
 			frappe.local.lang = "pt-BR"
@@ -77,36 +93,41 @@ class TestTranslate(FrappeTestCase):
 			frappe.local.lang = "en"
 			self.assertEqual(_("Mobile No"), "Mobile No")
 
-	def test_write_language_variant(self):
-		def import_export_translation(lang, updates):
-			path = os.path.join(frappe.get_app_path("frappe", "translations"), lang + ".csv")
-			translations = get_translation_dict_from_file(path, lang, "frappe")
-			translations.update(updates)
-			write_translations_file("frappe", lang, translations)
-			clear_cache()
-
-		frappe.local.lang = "pt-BR"
-		self.assertEqual(_("Mobile No"), "Telefone Celular")
-		try:
-			updates = {"Mobile No": "Nr. de Telemóvel"}
-			import_export_translation("pt-BR", updates)
-			self.assertEqual(_("Mobile No"), "Nr. de Telemóvel")
-		finally:
-			try:
-				restore = {"Mobile No": "Telefone Celular"}
-				import_export_translation("pt-BR", restore)
-				self.assertEqual(_("Mobile No"), "Telefone Celular")
-			finally:
-				frappe.local.lang = "en"
-				self.assertEqual(_("Mobile No"), "Mobile No")
-
 	def test_translation_with_context(self):
-		try:
-			frappe.local.lang = "fr"
-			self.assertEqual(_("Change"), "Changement")
-			self.assertEqual(_("Change", context="Coins"), "la monnaie")
-		finally:
-			frappe.local.lang = "en"
+		t1 = frappe.new_doc("Translation")
+		t1.language = "fr"
+		t1.source_text = "Change"
+		t1.translated_text = "Changement"
+		t1.save()
+
+		t2 = frappe.new_doc("Translation")
+		t2.language = "fr"
+		t2.source_text = "Change"
+		t2.translated_text = "la monnaie"
+		t2.context = "Coins"
+		t2.save()
+
+		frappe.local.lang = "fr"
+		self.assertEqual(_("Change"), "Changement")
+		self.assertEqual(_("Change", context="Coins"), "la monnaie")
+
+		t1.delete()
+		t2.delete()
+
+	def test_lazy_translations(self):
+		frappe.local.lang = "de"
+		eager_translation = _("Communication")
+		self.assertEqual(str(_lazy_translations), eager_translation)
+		self.assertRaises(NotImplementedError, lambda: _lazy_translations == "blah")
+
+		# auto casts when added or radded
+		self.assertEqual(_lazy_translations + "A", eager_translation + "A")
+		x = _lazy_translations
+		x += "A"
+		self.assertEqual(x, eager_translation + "A")
+
+		# f string usually auto-casts
+		self.assertEqual(f"{_lazy_translations}", eager_translation)
 
 	def test_request_language_resolution_with_form_dict(self):
 		"""Test for frappe.translate.get_language
@@ -151,7 +172,7 @@ class TestTranslate(FrappeTestCase):
 		site = frappe.local.site
 		frappe.destroy()
 		_("this shouldn't break")
-		frappe.init(site=site)
+		frappe.init(site)
 		frappe.connect()
 
 	def test_guest_request_language_resolution_with_request_header(self):
@@ -179,7 +200,6 @@ class TestTranslate(FrappeTestCase):
 		verify_translation_files("frappe")
 
 	def test_python_extractor(self):
-
 		code = textwrap.dedent(
 			"""
 			frappe._("attr")
@@ -195,6 +215,7 @@ class TestTranslate(FrappeTestCase):
 				)
 			_(not_a_string)
 			_(not_a_string, context="wat")
+			_lt("Communication")
 		"""
 		)
 		expected_output = [
@@ -204,16 +225,16 @@ class TestTranslate(FrappeTestCase):
 			(5, "name with", "name context"),
 			(6, "broken on", "new line"),
 			(10, "broken on separate line", None),
+			(15, "Communication", None),
 		]
 
 		output = extract_messages_from_python_code(code)
 		self.assertEqual(len(expected_output), len(output))
-		for expected, actual in zip(expected_output, output):
+		for expected, actual in zip(expected_output, output, strict=False):
 			with self.subTest():
 				self.assertEqual(expected, actual)
 
 	def test_js_extractor(self):
-
 		code = textwrap.dedent(
 			"""
 			__("attr")
@@ -246,7 +267,7 @@ class TestTranslate(FrappeTestCase):
 		output = extract_messages_from_javascript_code(code)
 
 		self.assertEqual(len(expected_output), len(output))
-		for expected, actual in zip(expected_output, output):
+		for expected, actual in zip(expected_output, output, strict=False):
 			with self.subTest():
 				self.assertEqual(expected, actual)
 
@@ -263,6 +284,40 @@ class TestTranslate(FrappeTestCase):
 		args = get_args("""__("attr with", ["format", "replacements"])""")
 		self.assertEqual(args, "attr with")
 
+		args = get_args("""__("attr with", null, "context")""")
+		self.assertEqual(args, ("attr with", None, "context"))
+
+		args = get_args(
+			"""__(
+				"Multiline translation with format replacements and context {0} {1}",
+				[
+					"format",
+					call("replacements", {
+						"key": "value"
+					}),
+				],
+				"context"
+			)"""
+		)
+		self.assertEqual(
+			args, ("Multiline translation with format replacements and context {0} {1}", None, "context")
+		)
+
+		args = get_args(
+			"""__(
+				"Multiline translation with format replacements and no context {0} {1}",
+				[
+					"format",
+					call("replacements", {
+						"key": "value"
+					}),
+				],
+			)"""
+		)
+		self.assertEqual(
+			args, ("Multiline translation with format replacements and no context {0} {1}", None)
+		)
+
 
 def verify_translation_files(app):
 	"""Function to verify translation file syntax in app."""
@@ -275,6 +330,8 @@ def verify_translation_files(app):
 	for file in translations_dir.glob("*.csv"):
 		lang = file.stem  # basename of file = lang
 		get_translation_dict_from_file(file, lang, app, throw=True)
+
+	get_messages_for_app(app)
 
 
 expected_output = [

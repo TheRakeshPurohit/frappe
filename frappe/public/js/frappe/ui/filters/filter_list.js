@@ -62,12 +62,14 @@ frappe.ui.FilterGroup = class {
 	}
 
 	set_popover_events() {
-		$(document.body).on("click", (e) => {
+		$(document.body).on("mousedown", (e) => {
 			if (this.wrapper && this.wrapper.is(":visible")) {
 				const in_datepicker =
 					$(e.target).is(".datepicker--cell") ||
 					$(e.target).closest(".datepicker--nav-title").length !== 0 ||
-					$(e.target).parents(".datepicker--nav-action").length !== 0;
+					$(e.target).parents(".datepicker--nav-action").length !== 0 ||
+					$(e.target).parents(".datepicker").length !== 0 ||
+					$(e.target).is(".datepicker--button");
 
 				if (
 					$(e.target).parents(".filter-popover").length === 0 &&
@@ -128,7 +130,7 @@ frappe.ui.FilterGroup = class {
 	update_filter_button() {
 		const filters_applied = this.filters.length > 0;
 		const button_label = filters_applied
-			? __("Filters <span class='filter-label'>{0}</span>", [this.filters.length])
+			? __("Filters {0}", [`<span class="filter-label">${this.filters.length}</span>`])
 			: __("Filter");
 
 		this.filter_button
@@ -252,27 +254,15 @@ frappe.ui.FilterGroup = class {
 
 	filter_exists(filter_value) {
 		// filter_value of form: [doctype, fieldname, condition, value]
-		let exists = false;
-		this.filters
+		return this.filters
 			.filter((f) => f.field)
-			.map((f) => {
+			.some((f) => {
 				let f_value = f.get_value();
 				if (filter_value.length === 2) {
-					exists = filter_value[0] === f_value[0] && filter_value[1] === f_value[1];
-					return;
+					return filter_value[0] === f_value[0] && filter_value[1] === f_value[1];
 				}
-
-				let value = filter_value[3];
-				let equal = frappe.utils.arrays_equal;
-
-				if (
-					equal(f_value.slice(0, 4), filter_value.slice(0, 4)) ||
-					(Array.isArray(value) && equal(value, f_value[3]))
-				) {
-					exists = true;
-				}
+				return frappe.utils.arrays_equal(f_value.slice(0, 4), filter_value.slice(0, 4));
 			});
-		return exists;
 	}
 
 	get_filters() {
@@ -281,7 +271,6 @@ frappe.ui.FilterGroup = class {
 			.map((f) => {
 				return f.get_value();
 			});
-		// {}: this.list.update_standard_filters(values);
 	}
 
 	update_filters() {

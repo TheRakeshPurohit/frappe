@@ -6,6 +6,8 @@ frappe.ui.FieldGroup = class FieldGroup extends frappe.ui.form.Layout {
 	constructor(opts) {
 		super(opts);
 		this.dirty = false;
+		this.fetch_dict = {};
+
 		$.each(this.fields || [], function (i, f) {
 			if (!f.fieldname && f.label) {
 				f.fieldname = f.label.replace(/ /g, "_").toLowerCase();
@@ -17,7 +19,7 @@ frappe.ui.FieldGroup = class FieldGroup extends frappe.ui.form.Layout {
 	}
 
 	make() {
-		var me = this;
+		let me = this;
 		if (this.fields) {
 			super.make();
 			this.refresh();
@@ -55,7 +57,7 @@ frappe.ui.FieldGroup = class FieldGroup extends frappe.ui.form.Layout {
 	focus_on_first_input() {
 		if (this.no_focus) return;
 		$.each(this.fields_list, function (i, f) {
-			if (!in_list(["Date", "Datetime", "Time", "Check"], f.df.fieldtype) && f.set_focus) {
+			if (!["Date", "Datetime", "Time", "Check"].includes(f.df.fieldtype) && f.set_focus) {
 				f.set_focus();
 				return false;
 			}
@@ -63,7 +65,7 @@ frappe.ui.FieldGroup = class FieldGroup extends frappe.ui.form.Layout {
 	}
 
 	catch_enter_as_submit() {
-		var me = this;
+		let me = this;
 		$(this.body)
 			.find('input[type="text"], input[type="password"], select')
 			.keypress(function (e) {
@@ -77,7 +79,8 @@ frappe.ui.FieldGroup = class FieldGroup extends frappe.ui.form.Layout {
 	}
 
 	get_input(fieldname) {
-		var field = this.fields_dict[fieldname];
+		let field = this.fields_dict[fieldname];
+		if (!field) return "";
 		return $(field.txt ? field.txt : field.input);
 	}
 
@@ -86,14 +89,14 @@ frappe.ui.FieldGroup = class FieldGroup extends frappe.ui.form.Layout {
 	}
 
 	get_values(ignore_errors, check_invalid) {
-		var ret = {};
-		var errors = [];
+		let ret = {};
+		let errors = [];
 		let invalid = [];
 
-		for (var key in this.fields_dict) {
-			var f = this.fields_dict[key];
+		for (let key in this.fields_dict) {
+			let f = this.fields_dict[key];
 			if (f.get_value) {
-				var v = f.get_value();
+				let v = f.get_value();
 				if (f.df.reqd && is_null(typeof v === "string" ? strip_html(v) : v))
 					errors.push(__(f.df.label));
 
@@ -127,7 +130,7 @@ frappe.ui.FieldGroup = class FieldGroup extends frappe.ui.form.Layout {
 
 		if (invalid.length && check_invalid) {
 			frappe.msgprint({
-				title: __("Inavlid Values"),
+				title: __("Invalid Values"),
 				message:
 					__("Following fields have invalid values:") +
 					"<br><br><ul><li>" +
@@ -141,13 +144,13 @@ frappe.ui.FieldGroup = class FieldGroup extends frappe.ui.form.Layout {
 	}
 
 	get_value(key) {
-		var f = this.fields_dict[key];
+		let f = this.fields_dict[key];
 		return f && (f.get_value ? f.get_value() : null);
 	}
 
 	set_value(key, val) {
 		return new Promise((resolve) => {
-			var f = this.fields_dict[key];
+			let f = this.fields_dict[key];
 			if (f) {
 				f.set_value(val).then(() => {
 					f.set_input?.(val);
@@ -170,7 +173,7 @@ frappe.ui.FieldGroup = class FieldGroup extends frappe.ui.form.Layout {
 
 	set_values(dict) {
 		let promises = [];
-		for (var key in dict) {
+		for (let key in dict) {
 			if (this.fields_dict[key]) {
 				promises.push(this.set_value(key, dict[key]));
 			}
@@ -180,8 +183,8 @@ frappe.ui.FieldGroup = class FieldGroup extends frappe.ui.form.Layout {
 	}
 
 	clear() {
-		for (var key in this.fields_dict) {
-			var f = this.fields_dict[key];
+		for (let key in this.fields_dict) {
+			let f = this.fields_dict[key];
 			if (f && f.set_input) {
 				f.set_input(f.df["default"] || "");
 			}
@@ -195,5 +198,44 @@ frappe.ui.FieldGroup = class FieldGroup extends frappe.ui.form.Layout {
 		const field = this.get_field(fieldname);
 		field.df[prop] = value;
 		field.refresh();
+	}
+
+	set_query(fieldname, opt1, opt2) {
+		if (opt2) {
+			// on child table
+			// set_query(fieldname, parent fieldname, query)
+			if (this.fields_dict[opt1])
+				this.fields_dict[opt1].grid.get_field(fieldname).get_query = opt2;
+		} else {
+			// on parent table
+			// set_query(fieldname, query)
+			if (this.fields_dict[fieldname]) {
+				this.fields_dict[fieldname].get_query = opt1;
+			}
+		}
+	}
+
+	// UTILITIES
+	add_fetch(link_field, source_field, target_field, target_doctype) {
+		/*
+		Example fetch dict to get sender_email from email_id field in sender:
+			{
+				"Notification": {
+					"sender": {
+						"sender_email": "email_id"
+					}
+				}
+			}
+		*/
+
+		if (!target_doctype) target_doctype = "*";
+
+		// Target field kept as key because source field could be non-unique
+		this.fetch_dict.setDefault(target_doctype, {}).setDefault(link_field, {})[target_field] =
+			source_field;
+	}
+
+	is_new() {
+		return this.doc.__islocal;
 	}
 };

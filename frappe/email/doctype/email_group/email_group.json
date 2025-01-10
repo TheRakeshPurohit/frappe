@@ -10,8 +10,11 @@
  "field_order": [
   "title",
   "total_subscribers",
+  "sign_up_and_confirmation_section",
   "confirmation_email_template",
-  "welcome_email_template"
+  "welcome_email_template",
+  "welcome_url",
+  "add_query_parameters"
  ],
  "fields": [
   {
@@ -41,6 +44,25 @@
    "fieldtype": "Link",
    "label": "Welcome Email Template",
    "options": "Email Template"
+  },
+  {
+   "fieldname": "sign_up_and_confirmation_section",
+   "fieldtype": "Section Break",
+   "label": "Sign Up and Confirmation"
+  },
+  {
+   "description": "Redirect to this URL after successful confirmation.",
+   "fieldname": "welcome_url",
+   "fieldtype": "Data",
+   "label": "Welcome URL",
+   "options": "URL"
+  },
+  {
+   "default": "0",
+   "depends_on": "welcome_url",
+   "fieldname": "add_query_parameters",
+   "fieldtype": "Check",
+   "label": "Add Query Parameters"
   }
  ],
  "index_web_pages_for_search": 1,
@@ -51,10 +73,11 @@
    "link_fieldname": "email_group"
   }
  ],
- "modified": "2021-06-15 11:25:13.556201",
+ "modified": "2024-09-25 15:24:37.576084",
  "modified_by": "Administrator",
  "module": "Email",
  "name": "Email Group",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {
@@ -73,7 +96,8 @@
  ],
  "quick_entry": 1,
  "show_name_in_global_search": 1,
- "sort_field": "modified",
+ "sort_field": "creation",
  "sort_order": "DESC",
+ "states": [],
  "track_changes": 1
 }

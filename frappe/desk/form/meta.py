@@ -8,7 +8,7 @@ from frappe.build import scrub_html_template
 from frappe.model.meta import Meta
 from frappe.model.utils import render_include
 from frappe.modules import get_module_path, load_doctype_module, scrub
-from frappe.utils import get_html_format
+from frappe.utils import get_bench_path, get_html_format
 from frappe.utils.data import get_link_to_form
 
 ASSET_KEYS = (
@@ -29,6 +29,7 @@ ASSET_KEYS = (
 	"__templates",
 	"__custom_js",
 	"__custom_list_js",
+	"__workspaces",
 )
 
 
@@ -67,6 +68,7 @@ class FormMeta(Meta):
 			self.load_templates()
 			self.load_dashboard()
 			self.load_kanban_meta()
+			self.load_workspaces()
 
 		self.set("__assets_loaded", True)
 
@@ -120,7 +122,9 @@ class FormMeta(Meta):
 	def _add_code(self, path, fieldname):
 		js = get_js(path)
 		if js:
-			comment = f"\n\n/* Adding {path} */\n\n"
+			bench_path = get_bench_path() + "/"
+			asset_path = path.replace(bench_path, "")
+			comment = f"\n\n/* Adding {asset_path} */\n\n"
 			sourceURL = f"\n\n//# sourceURL={scrub(self.name) + fieldname}"
 			self.set(fieldname, (self.get(fieldname) or "") + comment + js + sourceURL)
 
@@ -254,6 +258,37 @@ class FormMeta(Meta):
 
 	def load_dashboard(self):
 		self.set("__dashboard", self.get_dashboard_data())
+
+	def load_workspaces(self):
+		Shortcut = frappe.qb.DocType("Workspace Shortcut")
+		Workspace = frappe.qb.DocType("Workspace")
+		shortcut = (
+			frappe.qb.from_(Shortcut)
+			.select(Shortcut.parent)
+			.inner_join(Workspace)
+			.on(Workspace.name == Shortcut.parent)
+			.where(Shortcut.link_to == self.name)
+			.where(Shortcut.type == "DocType")
+			.where(Workspace.public == 1)
+			.run()
+		)
+		if shortcut:
+			self.set("__workspaces", [shortcut[0][0]])
+		else:
+			Link = frappe.qb.DocType("Workspace Link")
+			link = (
+				frappe.qb.from_(Link)
+				.select(Link.parent)
+				.inner_join(Workspace)
+				.on(Workspace.name == Link.parent)
+				.where(Link.link_type == "DocType")
+				.where(Link.link_to == self.name)
+				.where(Workspace.public == 1)
+				.run()
+			)
+
+			if link:
+				self.set("__workspaces", [link[0][0]])
 
 	def load_kanban_meta(self):
 		self.load_kanban_column_fields()

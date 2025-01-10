@@ -26,7 +26,9 @@ global_cache_keys = (
 	"installed_apps",
 	"all_apps",
 	"app_modules",
+	"installed_app_modules",
 	"module_app",
+	"module_installed_app",
 	"system_settings",
 	"scheduler_events",
 	"time_zone",
@@ -39,10 +41,10 @@ global_cache_keys = (
 	"domain_restricted_doctypes",
 	"domain_restricted_pages",
 	"information_schema:counts",
-	"sitemap_routes",
 	"db_tables",
 	"server_script_autocompletion_items",
-) + doctype_map_keys
+	*doctype_map_keys,
+)
 
 user_cache_keys = (
 	"bootinfo",
@@ -64,14 +66,17 @@ user_cache_keys = (
 )
 
 doctype_cache_keys = (
-	"doctype_meta",
 	"doctype_form_meta",
-	"table_columns",
 	"last_modified",
 	"linked_doctypes",
 	"notifications",
 	"workflow",
 	"data_import_column_header_map",
+)
+
+wildcard_keys = (
+	"document_cache::*",
+	"table_columns::*",
 )
 
 
@@ -83,13 +88,11 @@ def clear_user_cache(user=None):
 	clear_notifications(user)
 
 	if user:
-		for name in user_cache_keys:
-			frappe.cache.hdel(name, user)
+		frappe.cache.hdel_names(user_cache_keys, user)
 		frappe.cache.delete_keys("user:" + user)
 		clear_defaults_cache(user)
 	else:
-		for name in user_cache_keys:
-			frappe.cache.delete_key(name)
+		frappe.cache.delete_key(user_cache_keys)
 		clear_defaults_cache()
 		clear_global_cache()
 
@@ -104,17 +107,16 @@ def clear_global_cache():
 
 	clear_doctype_cache()
 	clear_website_cache()
-	frappe.cache.delete_value(global_cache_keys)
-	frappe.cache.delete_value(bench_cache_keys)
+	frappe.cache.delete_value(global_cache_keys + bench_cache_keys)
 	frappe.setup_module_map()
 
 
 def clear_defaults_cache(user=None):
 	if user:
-		for p in [user] + common_default_keys:
-			frappe.cache.hdel("defaults", p)
+		for key in [user, *common_default_keys]:
+			frappe.client_cache.delete_value(f"defaults::{key}")
 	elif frappe.flags.in_install != "frappe":
-		frappe.cache.delete_key("defaults")
+		frappe.client_cache.delete_keys("defaults::*")
 
 
 def clear_doctype_cache(doctype=None):
@@ -128,16 +130,17 @@ def clear_doctype_cache(doctype=None):
 
 def _clear_doctype_cache_from_redis(doctype: str | None = None):
 	from frappe.desk.notifications import delete_notification_count_for
+	from frappe.model.meta import clear_meta_cache
 
-	for key in ("is_table", "doctype_modules"):
-		frappe.cache.delete_value(key)
-
-	def clear_single(dt):
-		frappe.clear_document_cache(dt)
-		for name in doctype_cache_keys:
-			frappe.cache.hdel(name, dt)
+	to_del = ["is_table", "doctype_modules"]
 
 	if doctype:
+
+		def clear_single(dt):
+			frappe.clear_document_cache(dt)
+			frappe.cache.hdel_names(doctype_cache_keys, dt)
+			clear_meta_cache(dt)
+
 		clear_single(doctype)
 
 		# clear all parent doctypes
@@ -158,9 +161,12 @@ def _clear_doctype_cache_from_redis(doctype: str | None = None):
 
 	else:
 		# clear all
-		for name in doctype_cache_keys:
-			frappe.cache.delete_value(name)
-		frappe.cache.delete_keys("document_cache::")
+		to_del += doctype_cache_keys
+		for pattern in wildcard_keys:
+			to_del += frappe.cache.get_keys(pattern)
+		clear_meta_cache()
+
+	frappe.cache.delete_value(to_del)
 
 
 def clear_controller_cache(doctype=None):
@@ -198,16 +204,14 @@ def build_table_count_cache():
 	table_rows = frappe.qb.Field("table_rows").as_("count")
 	information_schema = frappe.qb.Schema("information_schema")
 
-	data = (frappe.qb.from_(information_schema.tables).select(table_name, table_rows)).run(
-		as_dict=True
-	)
+	data = (frappe.qb.from_(information_schema.tables).select(table_name, table_rows)).run(as_dict=True)
 	counts = {d.get("name").replace("tab", "", 1): d.get("count", None) for d in data}
 	frappe.cache.set_value("information_schema:counts", counts)
 
 	return counts
 
 
-def build_domain_restriced_doctype_cache(*args, **kwargs):
+def build_domain_restricted_doctype_cache(*args, **kwargs):
 	if (
 		frappe.flags.in_patch
 		or frappe.flags.in_install
@@ -224,7 +228,7 @@ def build_domain_restriced_doctype_cache(*args, **kwargs):
 	return doctypes
 
 
-def build_domain_restriced_page_cache(*args, **kwargs):
+def build_domain_restricted_page_cache(*args, **kwargs):
 	if (
 		frappe.flags.in_patch
 		or frappe.flags.in_install

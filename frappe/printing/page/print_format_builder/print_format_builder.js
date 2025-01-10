@@ -49,9 +49,9 @@ frappe.PrintFormatBuilder = class PrintFormatBuilder {
 		this.page.sidebar = $('<div class="print-format-builder-sidebar"></div>').appendTo(
 			this.page.sidebar
 		);
-		this.page.main = $(
-			'<div class="col-md-12 border print-format-builder-main frappe-card"></div>'
-		).appendTo(this.page.main);
+		this.page.main = $('<div class="col-md-12 print-format-builder-main"></div>').appendTo(
+			this.page.main
+		);
 
 		// future-bindings for buttons on sections / fields
 		// bind only once
@@ -225,7 +225,7 @@ frappe.PrintFormatBuilder = class PrintFormatBuilder {
 				'<div class="print-heading">\
 				<h2><div>' +
 				__(this.print_format.doc_type) +
-				'</div><br><small class="sub-heading">{{ doc.name }}</small>\
+				'</div><br><small class="sub-heading">{{ _(doc.name) }}</small>\
 				</h2></div>';
 		}
 
@@ -280,7 +280,7 @@ frappe.PrintFormatBuilder = class PrintFormatBuilder {
 				set_section(f.label);
 			} else if (f.fieldtype === "Column Break") {
 				set_column();
-			} else if (!in_list(frappe.model.layout_fields, f.fieldtype)) {
+			} else if (!frappe.model.layout_fields.includes(f.fieldtype)) {
 				if (!column) set_column();
 
 				if (f.fieldtype === "Table") {
@@ -317,7 +317,7 @@ frappe.PrintFormatBuilder = class PrintFormatBuilder {
 		f.visible_columns = [];
 		$.each(frappe.get_meta(f.options).fields, function (i, _f) {
 			if (
-				!in_list(["Section Break", "Column Break", "Tab Break"], _f.fieldtype) &&
+				!["Section Break", "Column Break", "Tab Break"].includes(_f.fieldtype) &&
 				!_f.print_hide &&
 				f.label
 			) {
@@ -485,6 +485,11 @@ frappe.PrintFormatBuilder = class PrintFormatBuilder {
 						],
 					},
 					{
+						label: __("Hide Label"),
+						fieldname: "nolabel",
+						fieldtype: "Check",
+					},
+					{
 						label: __("Remove Field"),
 						fieldtype: "Button",
 						click: function () {
@@ -497,10 +502,12 @@ frappe.PrintFormatBuilder = class PrintFormatBuilder {
 			});
 
 			d.set_value("label", field.attr("data-label"));
+			d.set_value("nolabel", field.attr("data-nolabel"));
 
 			d.set_primary_action(__("Update"), function () {
 				field.attr("data-align", d.get_value("align"));
 				field.attr("data-label", d.get_value("label"));
+				field.attr("data-nolabel", d.get_value("nolabel"));
 				field.find(".field-label").html(d.get_value("label"));
 				d.hide();
 			});
@@ -608,6 +615,7 @@ frappe.PrintFormatBuilder = class PrintFormatBuilder {
 			var parent = $(this).parents(".print-format-builder-field:first"),
 				doctype = parent.attr("data-doctype"),
 				label = parent.attr("data-label"),
+				nolabel = parent.attr("data-nolabel"),
 				columns = parent.attr("data-columns").split(","),
 				column_names = $.map(columns, function (v) {
 					return v.split("|")[0];
@@ -636,7 +644,7 @@ frappe.PrintFormatBuilder = class PrintFormatBuilder {
 			// add field which are in column_names first to preserve order
 			var fields = [];
 			$.each(column_names, function (i, v) {
-				if (in_list(Object.keys(docfields_by_name), v)) {
+				if (Object.keys(docfields_by_name).includes(v)) {
 					fields.push(docfields_by_name[v]);
 				}
 			});
@@ -644,8 +652,8 @@ frappe.PrintFormatBuilder = class PrintFormatBuilder {
 			$.each(doc_fields, function (j, f) {
 				if (
 					f &&
-					!in_list(column_names, f.fieldname) &&
-					!in_list(["Section Break", "Column Break", "Tab Break"], f.fieldtype) &&
+					!column_names.includes(f.fieldname) &&
+					!["Section Break", "Column Break", "Tab Break"].includes(f.fieldtype) &&
 					f.label
 				) {
 					fields.push(f);
@@ -792,6 +800,7 @@ frappe.PrintFormatBuilder = class PrintFormatBuilder {
 								fieldtype = $this.attr("data-fieldtype"),
 								align = $this.attr("data-align"),
 								label = $this.attr("data-label"),
+								nolabel = $this.attr("data-nolabel"),
 								df = {
 									fieldname: $this.attr("data-fieldname"),
 									print_hide: 0,
@@ -803,6 +812,10 @@ frappe.PrintFormatBuilder = class PrintFormatBuilder {
 
 							if (label) {
 								df.label = label;
+							}
+
+							if (cint(nolabel)) {
+								df.nolabel = 1;
 							}
 
 							if (fieldtype === "Table") {

@@ -24,11 +24,19 @@ frappe.db = {
 			});
 		});
 	},
-	exists: function (doctype, name) {
+	exists: function (doctype, nameOrFilters) {
 		return new Promise((resolve) => {
-			frappe.db.get_value(doctype, { name: name }, "name").then((r) => {
-				r.message && r.message.name ? resolve(true) : resolve(false);
-			});
+			let filters;
+			if (typeof nameOrFilters === "string") {
+				// may be cached and more effecient
+				frappe.db.get_value(doctype, { name: nameOrFilters }, "name").then((r) => {
+					r.message && r.message.name ? resolve(true) : resolve(false);
+				});
+			} else if (typeof nameOrFilters === "object") {
+				frappe.db.count(doctype, { filters: nameOrFilters, limit: 1 }).then((count) => {
+					resolve(count > 0);
+				});
+			}
 		});
 	},
 	get_value: function (doctype, filters, fieldname, callback, parent_doc) {
@@ -96,6 +104,7 @@ frappe.db = {
 	},
 	count: function (doctype, args = {}) {
 		let filters = args.filters || {};
+		let limit = args.limit;
 
 		// has a filter with childtable?
 		const distinct =
@@ -111,6 +120,7 @@ frappe.db = {
 			filters,
 			fields,
 			distinct,
+			limit,
 		});
 	},
 	get_link_options(doctype, txt = "", filters = {}) {
