@@ -124,7 +124,7 @@ frappe.ui.OnboardingTour = class OnboardingTour {
 		} = step_info;
 		let element = cur_page?.page.querySelector(element_selector);
 		!element && (element = document.querySelector(element_selector));
-		if (parent_element_selector) {
+		if (element && parent_element_selector) {
 			element = element.closest(parent_element_selector);
 		}
 		if (element && (next_on_click || hide_buttons || modal_trigger)) {
@@ -265,7 +265,7 @@ frappe.ui.init_onboarding_tour = () => {
 	typeof frappe.boot.user.onboarding_status == "undefined" &&
 		frappe.boot.user.onboarding_status == {};
 	let route = frappe.router.current_route;
-	if (route[0] === "") return;
+	if (route?.[0] === "") return;
 
 	let tour_name;
 	let matching_tours = [];

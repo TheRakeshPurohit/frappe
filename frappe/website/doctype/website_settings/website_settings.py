@@ -56,6 +56,7 @@ class WebsiteSettings(Document):
 		robots_txt: DF.Code | None
 		route_redirects: DF.Table[WebsiteRouteRedirect]
 		show_account_deletion_link: DF.Check
+		show_footer_on_login: DF.Check
 		show_language_picker: DF.Check
 		splash_image: DF.AttachImage | None
 		subdomain: DF.SmallText | None
@@ -63,8 +64,8 @@ class WebsiteSettings(Document):
 		top_bar_items: DF.Table[TopBarItem]
 		website_theme: DF.Link | None
 		website_theme_image_link: DF.Code | None
-
 	# end: auto-generated types
+
 	def validate(self):
 		self.validate_top_bar_items()
 		self.validate_footer_items()
@@ -170,7 +171,7 @@ class WebsiteSettings(Document):
 def get_website_settings(context=None):
 	hooks = frappe.get_hooks()
 	context = frappe._dict(context or {})
-	settings: "WebsiteSettings" = frappe.get_cached_doc("Website Settings")
+	settings: WebsiteSettings = frappe.client_cache.get_doc("Website Settings")
 
 	context = context.update(
 		{
@@ -228,14 +229,14 @@ def get_website_settings(context=None):
 	context.encoded_title = quote(encode(context.title or ""), "")
 
 	context.web_include_js = hooks.web_include_js or []
-
 	context.web_include_css = hooks.web_include_css or []
+	context.web_include_icons = hooks.web_include_icons or []
 
 	via_hooks = hooks.website_context or []
 	for key in via_hooks:
 		context[key] = via_hooks[key]
 		if key not in ("top_bar_items", "footer_items", "post_login") and isinstance(
-			context[key], (list, tuple)
+			context[key], list | tuple
 		):
 			context[key] = context[key][-1]
 
@@ -277,6 +278,10 @@ def get_items(parentfield: str) -> list[dict]:
 def modify_header_footer_items(items: list):
 	top_items = items.copy()
 	# attach child items to top bar
+
+	for item in items:
+		item.child_items = []  # clear cached list
+
 	for item in items:
 		if not item.parent_label:
 			continue

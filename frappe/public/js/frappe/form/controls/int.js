@@ -1,22 +1,15 @@
 frappe.ui.form.ControlInt = class ControlInt extends frappe.ui.form.ControlData {
 	static trigger_change_on_input_event = false;
+	static input_mode = "numeric";
 	make() {
 		super.make();
-		// $(this.label_area).addClass('pull-right');
-		// $(this.disp_area).addClass('text-right');
 	}
 	make_input() {
-		var me = this;
 		super.make_input();
-		this.$input
-			// .addClass("text-right")
-			.on("focus", function () {
-				setTimeout(function () {
-					if (!document.activeElement) return;
-					document.activeElement.select();
-				}, 100);
-				return false;
-			});
+		this.$input.on("focus", () => {
+			document.activeElement?.select?.();
+			return false;
+		});
 	}
 	validate(value) {
 		return this.parse(value);

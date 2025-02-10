@@ -85,8 +85,13 @@ export const useStore = defineStore("form-builder-store", () => {
 
 	async function fetch() {
 		doc.value = frm.value.doc;
-		if (doctype.value.startsWith("new-doctype-") && !doc.value.fields) {
-			doc.value.fields = [get_df("Data", "", __("Title"))];
+		if (doctype.value.startsWith("new-doctype-") && !doc.value.fields?.length) {
+			frappe.model.with_doctype("DocType").then(() => {
+				frappe.listview_settings["DocType"].new_doctype_dialog();
+			});
+			// redirect to /doctype
+			frappe.set_route("List", "DocType");
+			return;
 		}
 
 		if (!get_docfields.value.length) {
@@ -171,7 +176,7 @@ export const useStore = defineStore("form-builder-store", () => {
 			}
 
 			// Link & Table fields should always have options set
-			if (in_list(["Link", ...frappe.model.table_fields], df.fieldtype) && !df.options) {
+			if (["Link", ...frappe.model.table_fields].includes(df.fieldtype) && !df.options) {
 				error_message = __(
 					"Options is required for field {0} of type {1}",
 					get_field_data(df)
@@ -187,7 +192,7 @@ export const useStore = defineStore("form-builder-store", () => {
 			}
 
 			// In List View is not allowed for some fieldtypes
-			if (df.in_list_view && in_list(not_allowed_in_list_view, df.fieldtype)) {
+			if (df.in_list_view && not_allowed_in_list_view.includes(df.fieldtype)) {
 				error_message = __(
 					"'In List View' is not allowed for field {0} of type {1}",
 					get_field_data(df)
@@ -195,7 +200,7 @@ export const useStore = defineStore("form-builder-store", () => {
 			}
 
 			// In Global Search is not allowed for no_value_type fields
-			if (df.in_global_search && in_list(frappe.model.no_value_type, df.fieldtype)) {
+			if (df.in_global_search && frappe.model.no_value_type.includes(df.fieldtype)) {
 				error_message = __(
 					"'In Global Search' is not allowed for field {0} of type {1}",
 					get_field_data(df)

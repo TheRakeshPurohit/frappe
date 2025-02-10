@@ -12,7 +12,7 @@ from frappe.desk.reportview import validate_args
 from frappe.model.db_query import check_parent_permission
 from frappe.model.utils import is_virtual_doctype
 from frappe.utils import get_safe_filters
-from frappe.utils.deprecations import deprecated
+from frappe.utils.caching import http_cache
 
 if TYPE_CHECKING:
 	from frappe.model.document import Document
@@ -38,7 +38,7 @@ def get_list(
 	as_dict: bool = True,
 	or_filters=None,
 ):
-	"""Returns a list of records by filters, fields, ordering and limit
+	"""Return a list of records by filters, fields, ordering and limit.
 
 	:param doctype: DocType of the data to be queried
 	:param fields: fields to be returned. Default is `name`
@@ -74,7 +74,7 @@ def get_count(doctype, filters=None, debug=False, cache=False):
 
 @frappe.whitelist()
 def get(doctype, name=None, filters=None, parent=None):
-	"""Returns a document by name or filters
+	"""Return a document by name or filters.
 
 	:param doctype: DocType of the document to be returned
 	:param name: return document of this `name`
@@ -97,7 +97,7 @@ def get(doctype, name=None, filters=None, parent=None):
 
 @frappe.whitelist()
 def get_value(doctype, fieldname, filters=None, as_dict=True, debug=False, parent=None):
-	"""Returns a value form a document
+	"""Return a value from a document.
 
 	:param doctype: DocType to be queried
 	:param fieldname: Field to be returned (default `name`)
@@ -296,7 +296,7 @@ def bulk_update(docs):
 
 @frappe.whitelist()
 def has_permission(doctype, docname, perm_type="read"):
-	"""Returns a JSON with data whether the document has the requested permission
+	"""Return a JSON with data whether the document has the requested permission.
 
 	:param doctype: DocType of the document to be checked
 	:param docname: `name` of the document to be checked
@@ -307,7 +307,7 @@ def has_permission(doctype, docname, perm_type="read"):
 
 @frappe.whitelist()
 def get_doc_permissions(doctype, docname):
-	"""Returns an evaluated document permissions dict like `{"read":1, "write":1}`
+	"""Return an evaluated document permissions dict like `{"read":1, "write":1}`.
 
 	:param doctype: DocType of the document to be evaluated
 	:param docname: `name` of the document to be evaluated
@@ -328,33 +328,14 @@ def get_password(doctype, name, fieldname):
 	return frappe.get_doc(doctype, name).get_password(fieldname)
 
 
-@frappe.whitelist()
-@deprecated
-def get_js(items):
-	"""Load JS code files.  Will also append translations
-	and extend `frappe._messages`
+from frappe.deprecation_dumpster import get_js as _get_js
 
-	:param items: JSON list of paths of the js files to be loaded."""
-	items = json.loads(items)
-	out = []
-	for src in items:
-		src = src.strip("/").split("/")
-
-		if ".." in src or src[0] != "assets":
-			frappe.throw(_("Invalid file path: {0}").format("/".join(src)))
-
-		contentpath = os.path.join(frappe.local.sites_path, *src)
-		with open(contentpath) as srcfile:
-			code = frappe.utils.cstr(srcfile.read())
-
-		out.append(code)
-
-	return out
+get_js = frappe.whitelist()(_get_js)
 
 
 @frappe.whitelist(allow_guest=True)
 def get_time_zone():
-	"""Returns default time zone"""
+	"""Return the default time zone."""
 	return {"time_zone": frappe.defaults.get_defaults().get("time_zone")}
 
 
@@ -405,6 +386,7 @@ def attach_file(
 
 
 @frappe.whitelist()
+@http_cache(max_age=10 * 60)
 def is_document_amended(doctype, docname):
 	if frappe.permissions.has_permission(doctype):
 		try:
@@ -423,13 +405,18 @@ def validate_link(doctype: str, docname: str, fields=None):
 	if not isinstance(docname, str):
 		frappe.throw(_("Document Name must be a string"))
 
-	if doctype != "DocType" and not (
-		frappe.has_permission(doctype, "select") or frappe.has_permission(doctype, "read")
-	):
-		frappe.throw(
-			_("You do not have Read or Select Permissions for {}").format(frappe.bold(doctype)),
-			frappe.PermissionError,
-		)
+	if doctype != "DocType":
+		parent_doctype = None
+		if frappe.get_meta(doctype).istable:  # needed for links to child rows
+			parent_doctype = frappe.db.get_value(doctype, docname, "parenttype")
+		if not (
+			frappe.has_permission(doctype, "select", parent_doctype=parent_doctype)
+			or frappe.has_permission(doctype, "read", parent_doctype=parent_doctype)
+		):
+			frappe.throw(
+				_("You do not have Read or Select Permissions for {}").format(frappe.bold(doctype)),
+				frappe.PermissionError,
+			)
 
 	values = frappe._dict()
 
@@ -447,7 +434,11 @@ def validate_link(doctype: str, docname: str, fields=None):
 	values.name = frappe.db.get_value(doctype, docname, cache=True)
 
 	fields = frappe.parse_json(fields)
-	if not values.name or not fields:
+	if not values.name:
+		return values
+
+	if not fields:
+		frappe.local.response_headers.set("Cache-Control", "private,max-age=1800,stale-while-revalidate=7200")
 		return values
 
 	try:
@@ -466,8 +457,7 @@ def validate_link(doctype: str, docname: str, fields=None):
 
 
 def insert_doc(doc) -> "Document":
-	"""Inserts document and returns parent document object with appended child document
-	if `doc` is child document else returns the inserted document object
+	"""Insert document and return parent document object with appended child document if `doc` is child document else return the inserted document object.
 
 	:param doc: doc to insert (dict)"""
 
