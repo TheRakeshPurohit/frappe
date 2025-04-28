@@ -186,7 +186,7 @@ jobs:
         uses: actions/download-artifact@v3
 
       - name: Upload coverage data
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
           name: Server
           fail_ci_if_error: true
